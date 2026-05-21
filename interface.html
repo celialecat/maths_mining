@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathChain - Proof of Useful Work</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans">
+    <div class="container mx-auto p-6 max-w-5xl">
+        <h1 class="text-4xl font-bold text-center text-blue-600 mb-8">➗ MathChain</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- SECTION COMPTE -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">1. Mon Portefeuille</h2>
+                <button onclick="createWallet()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition">Créer un compte</button>
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-700">Mon Adresse (Clé publique) :</label>
+                    <input type="text" id="myAddress" class="mt-1 w-full p-2 border rounded bg-gray-50" readonly placeholder="Cliquez sur Créer un compte...">
+                </div>
+            </div>
+
+            <!-- SECTION TRANSACTION -->
+            <div class="bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-semibold mb-4">2. Nouvelle Transaction</h2>
+                <input type="text" id="txRecipient" placeholder="Adresse du destinataire" class="w-full mb-3 p-2 border rounded">
+                <input type="number" id="txAmount" placeholder="Montant (ex: 1.5)" class="w-full mb-3 p-2 border rounded">
+                <input type="text" id="txData" placeholder="Données / Publication mathématique (Optionnel)" class="w-full mb-3 p-2 border rounded">
+                <button onclick="sendTransaction()" class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition">Enregistrer la transaction</button>
+                <p id="txStatus" class="mt-2 text-sm font-semibold"></p>
+            </div>
+
+            <!-- SECTION MINAGE (MCTS + LLM) -->
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <h2 class="text-2xl font-semibold mb-4">3. Minage par IA (Proof of Math)</h2>
+                <p class="text-sm text-gray-600 mb-4">La preuve de travail est générée en résolvant un théorème Lean 4 à l'aide d'un LLM et de l'algorithme MCTS.</p>
+                
+                <div class="flex gap-4 mb-4">
+                    <input type="password" id="apiKey" placeholder="Clé API OpenAI (sk-...)" class="flex-1 p-2 border rounded">
+                    <button onclick="mineBlock()" id="mineBtn" class="bg-purple-600 text-white px-6 py-2 rounded hover:bg-purple-700 transition font-bold">Lancer le Minage</button>
+                </div>
+                
+                <div id="miningStatus" class="hidden p-4 bg-gray-50 rounded border border-gray-200">
+                    <p class="text-blue-600 font-mono text-sm mb-2" id="miningLogs">Minage en cours... Le LLM explore l'arbre des preuves.</p>
+                    <div class="w-full bg-gray-200 rounded h-2 mb-4">
+                        <div class="bg-blue-600 h-2 rounded animate-pulse" style="width: 100%"></div>
+                    </div>
+                </div>
+                <div id="miningResult" class="mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-green-400 p-4 rounded hidden"></div>
+            </div>
+
+            <!-- SECTION BLOCKCHAIN -->
+            <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-semibold">L'Explorateur de Blocs</h2>
+                    <button onclick="fetchChain()" class="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300 transition">Actualiser</button>
+                </div>
+                <pre id="chainDisplay" class="bg-gray-50 p-4 rounded border text-xs overflow-auto max-h-96"></pre>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        async function createWallet() {
+            const res = await fetch('/wallet/new');
+            const data = await res.json();
+            document.getElementById('myAddress').value = data.address;
+        }
+
+        async function sendTransaction() {
+            const sender = document.getElementById('myAddress').value || "Anonyme";
+            const recipient = document.getElementById('txRecipient').value;
+            const amount = parseFloat(document.getElementById('txAmount').value);
+            const data = document.getElementById('txData').value;
+
+            if (!recipient || !amount) {
+                alert("Veuillez remplir le destinataire et le montant.");
+                return;
+            }
+
+            const res = await fetch('/transactions/new', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sender, recipient, amount, data })
+            });
+            const result = await res.json();
+            document.getElementById('txStatus').innerText = result.message;
+            document.getElementById('txStatus').className = "mt-2 text-sm font-semibold text-green-600";
+        }
+
+        async function mineBlock() {
+            const apiKey = document.getElementById('apiKey').value;
+            const address = document.getElementById('myAddress').value;
+
+            if (!apiKey || !address) {
+                alert("Veuillez générer un compte et entrer une clé API OpenAI.");
+                return;
+            }
+
+            // UI Update
+            document.getElementById('mineBtn').disabled = true;
+            document.getElementById('mineBtn').innerText = "Minage en cours...";
+            document.getElementById('miningStatus').classList.remove('hidden');
+            document.getElementById('miningResult').classList.add('hidden');
+
+            try {
+                const res = await fetch('/mine', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: apiKey, address: address })
+                });
+                
+                const data = await res.json();
+                
+                const resultDiv = document.getElementById('miningResult');
+                resultDiv.classList.remove('hidden');
+                
+                if (res.ok) {
+                    resultDiv.className = "mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-green-400 p-4 rounded";
+                    resultDiv.innerHTML = `Succès ! Bloc ${data.block_index} miné.\nThéorème : ${data.theorem}\nPreuve Lean :\n${data.proof}`;
+                    fetchChain(); // Met à jour l'affichage
+                } else {
+                    resultDiv.className = "mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-red-400 p-4 rounded";
+                    resultDiv.innerHTML = `Échec du minage.\n${data.error}\nMeilleure tentative :\n${data.best_attempt}`;
+                }
+            } catch (err) {
+                alert("Erreur de connexion au serveur.");
+            } finally {
+                document.getElementById('mineBtn').disabled = false;
+                document.getElementById('mineBtn').innerText = "Lancer le Minage";
+                document.getElementById('miningStatus').classList.add('hidden');
+            }
+        }
+
+        async function fetchChain() {
+            const res = await fetch('/chain');
+            const data = await res.json();
+            document.getElementById('chainDisplay').innerText = JSON.stringify(data, null, 4);
+        }
+
+        // Chargement initial
+        fetchChain();
+    </script>
+</body>
+</html>
