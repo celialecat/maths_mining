@@ -1,10 +1,18 @@
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
 
 import config
+
+# Patterns that could allow arbitrary code execution in Lean
+_UNSAFE_LEAN_PATTERNS = re.compile(
+    r'#eval|#check|#reduce|IO\.|System\.|Environment\.|Lake\.|'
+    r'native_decide|Lean\.Elab|import\s+(?!Mathlib)',
+    re.IGNORECASE,
+)
 
 
 @dataclass
@@ -35,6 +43,13 @@ def verify_lean_proof(theorem_statement: str, proof_code: str) -> VerificationRe
 
 
 def _real_verify(theorem_statement: str, proof_code: str) -> VerificationResult:
+    if _UNSAFE_LEAN_PATTERNS.search(proof_code):
+        return VerificationResult(
+            is_valid=False,
+            is_complete=False,
+            output="Proof rejected: contains unsafe Lean patterns",
+        )
+
     lean_code = f"{theorem_statement} :=\n{proof_code}\n"
     try:
         with tempfile.NamedTemporaryFile(

@@ -20,7 +20,7 @@ MINING_REWARD = float(os.environ.get("MINING_REWARD", "1.0"))
 COINBASE_ADDRESS = "0"
 
 # --- Flask ---
-FLASK_HOST = os.environ.get("FLASK_HOST", "0.0.0.0")
+FLASK_HOST = os.environ.get("FLASK_HOST", "127.0.0.1")
 FLASK_PORT = int(os.environ.get("FLASK_PORT", "5000"))
 FLASK_DEBUG = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
 
