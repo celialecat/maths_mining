@@ -1,12 +1,18 @@
+import logging
 import os
-import sys
 
-from flask import Flask
+from flask import Flask, jsonify
 
 import config
 from api.routes import bp
 from mining.lean_verifier import is_lean_available, should_use_mock
 from mining.llm_prover import LLMProver
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
@@ -15,32 +21,38 @@ def create_app() -> Flask:
         template_folder=os.path.join(os.path.dirname(__file__), "templates"),
     )
     app.register_blueprint(bp)
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        logger.exception("Unhandled server error: %s", error)
+        return jsonify({"error": "Internal server error"}), 500
+
     return app
 
 
 def print_startup_info():
-    print("=" * 50)
-    print("  MathChain - Proof of Useful Work Blockchain")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("  MathChain - Proof of Useful Work Blockchain")
+    logger.info("=" * 50)
 
     if is_lean_available():
-        print("  Lean 4:  CONNECTED")
+        logger.info("  Lean 4:  CONNECTED")
     else:
-        print("  Lean 4:  NOT FOUND (using mock verifier)")
+        logger.info("  Lean 4:  NOT FOUND (using mock verifier)")
 
     if should_use_mock():
-        print("  Mode:    MOCK (proofs accepted heuristically)")
+        logger.info("  Mode:    MOCK (proofs accepted heuristically)")
     else:
-        print("  Mode:    REAL (proofs verified by Lean compiler)")
+        logger.info("  Mode:    REAL (proofs verified by Lean compiler)")
 
     llm = LLMProver()
     if llm.is_available:
-        print(f"  LLM:     CONNECTED ({config.OPENAI_MODEL})")
+        logger.info("  LLM:     CONNECTED (%s)", config.OPENAI_MODEL)
     else:
-        print("  LLM:     FALLBACK (using hardcoded tactics)")
+        logger.info("  LLM:     FALLBACK (using hardcoded tactics)")
 
-    print(f"  Server:  http://{config.FLASK_HOST}:{config.FLASK_PORT}")
-    print("=" * 50)
+    logger.info("  Server:  http://%s:%s", config.FLASK_HOST, config.FLASK_PORT)
+    logger.info("=" * 50)
 
 
 if __name__ == "__main__":
