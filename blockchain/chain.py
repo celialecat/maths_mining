@@ -3,6 +3,8 @@ from time import time
 
 from blockchain.block import Block
 from blockchain.transaction import Transaction
+from mining.lean_verifier import verify_lean_proof
+from problems.problem_db import ProblemDB
 import config
 
 
@@ -65,13 +67,34 @@ class Blockchain:
             self.chain.append(block)
             return block
 
-    def validate_chain(self) -> tuple[bool, str]:
+    def validate_chain(self, problem_db: "ProblemDB | None" = None) -> tuple[bool, str]:
+        errors: list[str] = []
         for i in range(1, len(self.chain)):
             current = self.chain[i]
             previous = self.chain[i - 1]
             if current.previous_hash != previous.compute_hash():
-                return False, f"Block {i}: previous_hash mismatch"
+                errors.append(f"Block {i}: previous_hash mismatch")
+                continue
+            if problem_db is not None and current.problem_id >= 0:
+                problem = problem_db.get_problem(current.problem_id)
+                if problem is None:
+                    errors.append(f"Block {i}: unknown problem_id {current.problem_id}")
+                    continue
+                result = verify_lean_proof(problem["statement"], current.proof)
+                if not result.is_complete:
+                    errors.append(
+                        f"Block {i}: proof verification failed for problem {current.problem_id}"
+                    )
+        if errors:
+            return False, "; ".join(errors)
         return True, ""
+
+    def get_solved_problem_ids(self) -> set[int]:
+        solved = set()
+        for block in self.chain:
+            if block.problem_id >= 0:
+                solved.add(block.problem_id)
+        return solved
 
     def get_chain_data(self) -> dict:
         return {
@@ -80,4 +103,5 @@ class Blockchain:
             "pending_transactions": [
                 tx.to_dict() for tx in self.pending_transactions
             ],
+            "solved_problems": list(self.get_solved_problem_ids()),
         }

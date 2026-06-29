@@ -10,7 +10,11 @@ from api.validators import (
 )
 from blockchain.chain import Blockchain
 from blockchain.transaction import Transaction
-from mining.lean_verifier import is_lean_available, should_use_mock
+from mining.lean_verifier import (
+    is_lean_available,
+    should_use_mock,
+    verify_lean_proof,
+)
 from mining.llm_prover import LLMProver
 from mining.miner import AlphaProofMiner
 from problems.problem_db import ProblemDB
@@ -147,4 +151,79 @@ def status():
         "mock_mode": should_use_mock(),
         "llm_available": llm.is_available,
         "problems_count": problem_db.count,
+        "solved_problems": list(blockchain.get_solved_problem_ids()),
     }), 200
+
+
+@bp.route("/problems/current", methods=["GET"])
+def current_problem():
+    last_hash = blockchain.last_block.compute_hash()
+    problem = problem_db.get_problem_for_block(last_hash)
+    solved = blockchain.get_solved_problem_ids()
+    return jsonify({
+        "problem": problem,
+        "block_index": blockchain.length,
+        "already_solved_globally": problem["id"] in solved,
+    }), 200
+
+
+@bp.route("/solutions/submit", methods=["POST"])
+def submit_solution():
+    body, err = get_json_body()
+    if body is None:
+        return jsonify({"error": err}), 400
+
+    ok, err = require_fields(body, ["address", "proof"])
+    if not ok:
+        return jsonify({"error": err}), 400
+
+    address = body["address"]
+    ok, err = validate_address(address)
+    if not ok:
+        return jsonify({"error": err}), 400
+
+    proof_code = body["proof"].strip()
+    if not proof_code:
+        return jsonify({"error": "Proof cannot be empty"}), 400
+
+    last_hash = blockchain.last_block.compute_hash()
+    problem = problem_db.get_problem_for_block(last_hash)
+
+    result = verify_lean_proof(problem["statement"], proof_code)
+
+    if not result.is_complete:
+        reason = result.output if result.output else "Proof did not verify"
+        return jsonify({
+            "error": "Proof rejected",
+            "reason": reason,
+            "is_valid": result.is_valid,
+            "is_complete": result.is_complete,
+            "theorem": problem["statement"],
+            "mock_mode": result.mock,
+        }), 400
+
+    blockchain.add_reward_transaction(address)
+    block = blockchain.create_block(
+        proof=proof_code,
+        problem_id=problem["id"],
+    )
+    return jsonify({
+        "message": "Solution accepted! Block mined.",
+        "theorem": problem["statement"],
+        "theorem_title": problem.get("title", ""),
+        "proof": proof_code,
+        "block_index": block.index,
+        "problem_id": problem["id"],
+        "mock_mode": result.mock,
+    }), 200
+
+
+@bp.route("/validate", methods=["GET"])
+def validate_chain():
+    is_valid, error = blockchain.validate_chain(problem_db)
+    return jsonify({
+        "valid": is_valid,
+        "error": error if error else None,
+        "chain_length": blockchain.length,
+        "blocks_checked": blockchain.length - 1,
+    }), 200 if is_valid else 400
