@@ -120,11 +120,11 @@
                 
                 if (res.ok) {
                     resultDiv.className = "mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-green-400 p-4 rounded";
-                    resultDiv.innerHTML = `Succès ! Bloc ${data.block_index} miné.\nThéorème : ${data.theorem}\nPreuve Lean :\n${data.proof}`;
-                    fetchChain(); // Met à jour l'affichage
+                    resultDiv.textContent = `Succès ! Bloc ${data.block_index} miné.\nThéorème : ${data.theorem}\nPreuve Lean :\n${data.proof}`;
+                    fetchChain();
                 } else {
                     resultDiv.className = "mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-red-400 p-4 rounded";
-                    resultDiv.innerHTML = `Échec du minage.\n${data.error}\nMeilleure tentative :\n${data.best_attempt}`;
+                    resultDiv.textContent = `Échec du minage.\n${data.error}\nMeilleure tentative :\n${data.best_attempt}`;
                 }
             } catch (err) {
                 alert("Erreur de connexion au serveur.");

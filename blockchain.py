@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import subprocess
 import os
 import math
@@ -147,14 +148,27 @@ class Blockchain:
         seed = int(last_hash, 16)
         return PROBLEM_DB[seed % len(PROBLEM_DB)]
 
+    # Patterns that could allow arbitrary code execution in Lean
+    UNSAFE_LEAN_PATTERNS = re.compile(
+        r'#eval|#check|#reduce|IO\.|System\.|Environment\.|Lake\.|'
+        r'native_decide|Lean\.Elab|import\s+(?!Mathlib)',
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def verify_lean_proof(theorem_statement, proof_code):
+        if Blockchain.UNSAFE_LEAN_PATTERNS.search(proof_code):
+            return False, False
+
         lean_code = f"import Mathlib\n\n{theorem_statement}\n{proof_code}\n"
         filename = f"temp_proof_{uuid4().hex[:8]}.lean"
         try:
             with open(filename, "w") as f:
                 f.write(lean_code)
-            result = subprocess.run(["lean", filename], capture_output=True, text=True, timeout=10)
+            result = subprocess.run(
+                ["lean", filename],
+                capture_output=True, text=True, timeout=10,
+            )
             output = result.stdout + result.stderr
             
             if "error:" in output: return False, False
@@ -222,11 +236,24 @@ def new_transaction():
     if not all(k in values for k in required):
         return jsonify({'error': 'Valeurs manquantes'}), 400
 
+    try:
+        amount = float(values['amount'])
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Le montant doit être un nombre'}), 400
+
+    if amount <= 0:
+        return jsonify({'error': 'Le montant doit être positif'}), 400
+
+    sender = str(values['sender']).strip()
+    recipient = str(values['recipient']).strip()
+    if not sender or not recipient:
+        return jsonify({'error': 'Expéditeur et destinataire requis'}), 400
+
     index = blockchain.new_transaction(
-        values['sender'], 
-        values['recipient'], 
-        values['amount'],
-        values.get('data', '')
+        sender,
+        recipient,
+        amount,
+        str(values.get('data', '')),
     )
     return jsonify({'message': f'Transaction en attente pour le bloc {index}'}), 201
 
@@ -239,7 +266,9 @@ def full_chain():
     }), 200
 
 if __name__ == '__main__':
-    # Création du dossier templates s'il n'existe pas
     os.makedirs('templates', exist_ok=True)
-    print("Démarrage du nœud MathChain sur http://localhost:5000")
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    port = int(os.environ.get('FLASK_PORT', '5000'))
+    print(f"Démarrage du nœud MathChain sur http://{host}:{port}")
+    app.run(host=host, port=port, debug=debug)
