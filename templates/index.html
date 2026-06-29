@@ -126,6 +126,35 @@
                 <p id="txStatus" class="mt-2 text-sm font-medium hidden"></p>
             </div>
 
+            <!-- API KEY SETTINGS -->
+            <div class="bg-white p-6 rounded-lg shadow-sm border md:col-span-2">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-semibold flex items-center gap-2">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                        </svg>
+                        OpenAI API Key
+                    </h2>
+                    <span id="llmBadge" class="text-xs px-2 py-1 rounded font-medium bg-yellow-100 text-yellow-700">Fallback</span>
+                </div>
+                <p class="text-xs text-gray-500 mb-3">Optional: connect an LLM for smarter MCTS tactic suggestions. Key is stored in server memory only, never sent back to the browser.</p>
+                <div class="flex gap-2">
+                    <input type="password" id="apiKeyInput"
+                        placeholder="sk-..."
+                        class="flex-1 p-2 border rounded text-sm font-mono bg-gray-50 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none">
+                    <button onclick="setApiKey()" id="apiKeyBtn"
+                        class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 transition text-sm font-medium whitespace-nowrap">
+                        Save Key
+                    </button>
+                    <button onclick="clearApiKey()" id="clearApiKeyBtn"
+                        class="bg-gray-200 text-gray-600 px-3 py-2 rounded hover:bg-gray-300 transition text-sm font-medium whitespace-nowrap">
+                        Clear
+                    </button>
+                </div>
+                <p id="apiKeyStatus" class="mt-2 text-sm font-medium hidden"></p>
+            </div>
+
             <!-- ALL PROBLEMS -->
             <div class="bg-white p-6 rounded-lg shadow-sm border md:col-span-2">
                 <div class="flex justify-between items-center mb-4">
@@ -186,12 +215,21 @@
                 }
 
                 var llmEl = document.getElementById('statusLLM');
+                var llmBadge = document.getElementById('llmBadge');
                 if (s.llm_available) {
                     llmEl.textContent = 'LLM: Connected';
                     llmEl.className = 'text-green-400';
+                    if (llmBadge) {
+                        llmBadge.textContent = 'Connected';
+                        llmBadge.className = 'text-xs px-2 py-1 rounded font-medium bg-green-100 text-green-700';
+                    }
                 } else {
                     llmEl.textContent = 'LLM: Fallback';
                     llmEl.className = 'text-yellow-400';
+                    if (llmBadge) {
+                        llmBadge.textContent = 'Fallback';
+                        llmBadge.className = 'text-xs px-2 py-1 rounded font-medium bg-yellow-100 text-yellow-700';
+                    }
                 }
             } catch (e) {
                 // ignore
@@ -400,6 +438,63 @@
 
         function toggleLogs() {
             document.getElementById('miningLogsContent').classList.toggle('hidden');
+        }
+
+        // --- API Key ---
+        async function setApiKey() {
+            var input = document.getElementById('apiKeyInput');
+            var key = input.value.trim();
+            if (!key) {
+                alert('Please enter an API key.');
+                return;
+            }
+
+            var btn = document.getElementById('apiKeyBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            try {
+                var res = await fetch('/config/api-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ api_key: key })
+                });
+                var data = await res.json();
+                var statusEl = document.getElementById('apiKeyStatus');
+                statusEl.classList.remove('hidden');
+
+                if (res.ok) {
+                    statusEl.textContent = 'API key saved. LLM is now connected.';
+                    statusEl.className = 'mt-2 text-sm font-medium text-green-600';
+                    input.value = '';
+                    input.placeholder = 'Key configured (hidden)';
+                    fetchStatus();
+                } else {
+                    statusEl.textContent = data.error || 'Failed to save API key';
+                    statusEl.className = 'mt-2 text-sm font-medium text-red-600';
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Save Key';
+            }
+        }
+
+        async function clearApiKey() {
+            try {
+                var res = await fetch('/config/api-key', { method: 'DELETE' });
+                var data = await res.json();
+                var statusEl = document.getElementById('apiKeyStatus');
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = 'API key cleared. Using fallback tactics.';
+                statusEl.className = 'mt-2 text-sm font-medium text-yellow-600';
+                document.getElementById('apiKeyInput').value = '';
+                document.getElementById('apiKeyInput').placeholder = 'sk-...';
+                fetchStatus();
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            }
         }
 
         // --- Problem Library ---

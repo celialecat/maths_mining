@@ -218,6 +218,40 @@ def submit_solution():
     }), 200
 
 
+@bp.route("/config/api-key", methods=["POST"])
+def set_api_key():
+    body, err = get_json_body()
+    if body is None:
+        return jsonify({"error": err}), 400
+
+    ok, err = require_fields(body, ["api_key"])
+    if not ok:
+        return jsonify({"error": err}), 400
+
+    api_key = body["api_key"].strip()
+    if not api_key:
+        return jsonify({"error": "API key cannot be empty"}), 400
+
+    llm.set_api_key(api_key)
+    miner.llm.set_api_key(api_key)
+
+    return jsonify({
+        "message": "API key configured successfully",
+        "llm_available": llm.is_available,
+    }), 200
+
+
+@bp.route("/config/api-key", methods=["DELETE"])
+def clear_api_key():
+    llm.set_api_key("")
+    miner.llm.set_api_key("")
+
+    return jsonify({
+        "message": "API key cleared",
+        "llm_available": llm.is_available,
+    }), 200
+
+
 @bp.route("/validate", methods=["GET"])
 def validate_chain():
     is_valid, error = blockchain.validate_chain(problem_db)
