@@ -1,17 +1,5 @@
 import config
-
-FALLBACK_TACTICS = [
-    "rfl",
-    "simp",
-    "omega",
-    "ring",
-    "norm_num",
-    "decide",
-    "trivial",
-    "simp [Nat.add_comm]",
-    "simp [Nat.mul_comm]",
-    "simp [Nat.add_assoc]",
-]
+from mining.tactics import FALLBACK_TACTICS
 
 
 class LLMProver:

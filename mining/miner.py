@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import config
 from mining.lean_verifier import VerificationResult, verify_lean_proof
 from mining.llm_prover import LLMProver
-from mining.mcts import MCTSNode, expand, pick_random_child, select
+from mining.mcts import MCTSNode, expand, pick_random_child, select, traverse_tree
 from mining.value_network import ProofValueNetwork
 
 
@@ -104,24 +104,19 @@ class AlphaProofMiner:
     def _find_best_attempt(self, root: MCTSNode) -> str:
         best_node = root
         best_score = -float("inf")
-        queue = [root]
-        while queue:
-            node = queue.pop()
+        for node in traverse_tree(root):
             if node.visits > 0:
                 avg = node.value / node.visits
                 if avg > best_score and not node.is_terminal:
                     best_score = avg
                     best_node = node
-            queue.extend(node.children)
         return best_node.proof_state
 
     def _record_trajectory(self, root: MCTSNode, reward: float):
-        trajectory: list[tuple[str, float]] = []
-        queue = [root]
-        while queue:
-            node = queue.pop()
-            if node.visits > 0:
-                trajectory.append((node.proof_state, reward if node.is_solved else 0.0))
-            queue.extend(node.children)
+        trajectory: list[tuple[str, float]] = [
+            (node.proof_state, reward if node.is_solved else 0.0)
+            for node in traverse_tree(root)
+            if node.visits > 0
+        ]
         if trajectory:
             self.value_net.train_on_episode(trajectory)

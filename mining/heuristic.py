@@ -1,3 +1,6 @@
+from mining.tactics import STRONG_TACTICS
+
+
 def rule_based_heuristic(proof_state: str) -> float:
     score = 0.5
     lines = [l.strip() for l in proof_state.strip().splitlines() if l.strip()]
@@ -8,11 +11,10 @@ def rule_based_heuristic(proof_state: str) -> float:
     elif depth <= 3:
         score += 0.1
 
-    strong_tactics = {"rfl", "simp", "omega", "ring", "norm_num", "decide"}
     for line in lines:
         tokens = line.split()
         for token in tokens:
-            if token in strong_tactics:
+            if token in STRONG_TACTICS:
                 score += 0.15
 
     if "sorry" in proof_state.lower():
