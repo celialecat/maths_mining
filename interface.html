@@ -65,30 +65,49 @@
 
     <script>
         async function createWallet() {
-            const res = await fetch('/wallet/new');
-            const data = await res.json();
-            document.getElementById('myAddress').value = data.address;
+            try {
+                const res = await fetch('/wallet/new');
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || `Erreur serveur (${res.status})`);
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('myAddress').value = data.address;
+            } catch (err) {
+                alert("Impossible de contacter le serveur. Vérifiez qu'il est démarré.");
+            }
         }
 
         async function sendTransaction() {
             const sender = document.getElementById('myAddress').value || "Anonyme";
             const recipient = document.getElementById('txRecipient').value;
             const amount = parseFloat(document.getElementById('txAmount').value);
-            const data = document.getElementById('txData').value;
+            const txData = document.getElementById('txData').value;
 
-            if (!recipient || !amount) {
-                alert("Veuillez remplir le destinataire et le montant.");
+            if (!recipient || !amount || isNaN(amount) || amount <= 0) {
+                alert("Veuillez remplir le destinataire et un montant positif.");
                 return;
             }
 
-            const res = await fetch('/transactions/new', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sender, recipient, amount, data })
-            });
-            const result = await res.json();
-            document.getElementById('txStatus').innerText = result.message;
-            document.getElementById('txStatus').className = "mt-2 text-sm font-semibold text-green-600";
+            try {
+                const res = await fetch('/transactions/new', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sender, recipient, amount, data: txData })
+                });
+                const result = await res.json();
+                const statusEl = document.getElementById('txStatus');
+                if (res.ok) {
+                    statusEl.innerText = result.message;
+                    statusEl.className = "mt-2 text-sm font-semibold text-green-600";
+                } else {
+                    statusEl.innerText = result.error || "Erreur inconnue";
+                    statusEl.className = "mt-2 text-sm font-semibold text-red-600";
+                }
+            } catch (err) {
+                alert("Erreur de connexion au serveur.");
+            }
         }
 
         async function mineBlock() {
@@ -112,22 +131,24 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ api_key: apiKey, address: address })
                 });
-                
-                const data = await res.json();
-                
+
+                const data = await res.json().catch(() => ({}));
+
                 const resultDiv = document.getElementById('miningResult');
                 resultDiv.classList.remove('hidden');
-                
+
                 if (res.ok) {
                     resultDiv.className = "mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-green-400 p-4 rounded";
-                    resultDiv.innerHTML = `Succès ! Bloc ${data.block_index} miné.\nThéorème : ${data.theorem}\nPreuve Lean :\n${data.proof}`;
-                    fetchChain(); // Met à jour l'affichage
+                    resultDiv.textContent = `Succès ! Bloc ${data.block_index} miné.\nThéorème : ${data.theorem}\nPreuve Lean :\n${data.proof}`;
+                    fetchChain();
                 } else {
                     resultDiv.className = "mt-4 font-mono text-sm whitespace-pre-wrap bg-gray-800 text-red-400 p-4 rounded";
-                    resultDiv.innerHTML = `Échec du minage.\n${data.error}\nMeilleure tentative :\n${data.best_attempt}`;
+                    const errorMsg = data.error || `Erreur serveur (${res.status})`;
+                    const attempt = data.best_attempt ? `\nMeilleure tentative :\n${data.best_attempt}` : '';
+                    resultDiv.textContent = `Échec du minage.\n${errorMsg}${attempt}`;
                 }
             } catch (err) {
-                alert("Erreur de connexion au serveur.");
+                alert("Erreur de connexion au serveur. Vérifiez qu'il est démarré.");
             } finally {
                 document.getElementById('mineBtn').disabled = false;
                 document.getElementById('mineBtn').innerText = "Lancer le Minage";
@@ -136,9 +157,17 @@
         }
 
         async function fetchChain() {
-            const res = await fetch('/chain');
-            const data = await res.json();
-            document.getElementById('chainDisplay').innerText = JSON.stringify(data, null, 4);
+            try {
+                const res = await fetch('/chain');
+                if (!res.ok) {
+                    document.getElementById('chainDisplay').innerText = `Erreur serveur (${res.status})`;
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('chainDisplay').innerText = JSON.stringify(data, null, 4);
+            } catch (err) {
+                document.getElementById('chainDisplay').innerText = "Impossible de charger la chaîne. Vérifiez que le serveur est démarré.";
+            }
         }
 
         // Chargement initial

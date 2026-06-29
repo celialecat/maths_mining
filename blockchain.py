@@ -1,16 +1,18 @@
 import hashlib
 import json
+import logging
 import subprocess
 import os
 import math
 import random
 from time import time
-from urllib.parse import urlparse
 from uuid import uuid4
 
-import requests
 from flask import Flask, jsonify, request, render_template
 from openai import OpenAI
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # --- BASE DE DONNÉES DE PROBLÈMES ---
 # Pour l'MVP, on utilise des théorèmes simples pour que le minage ne prenne pas des heures.
@@ -49,16 +51,23 @@ class AlphaProofMiner:
         """
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo", # Rapide et économique pour les tests
+                model="gpt-3.5-turbo",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=50,
                 temperature=0.7
             )
             content = response.choices[0].message.content
-            return [line.strip() for line in content.split('\n') if line.strip()]
+            if not content:
+                logger.warning("LLM returned empty content, using fallback tactics")
+                return ["rfl", "simp", "sorry"]
+            tactics = [line.strip() for line in content.split('\n') if line.strip()]
+            if not tactics:
+                logger.warning("LLM response parsed to zero tactics, using fallback")
+                return ["rfl", "simp", "sorry"]
+            return tactics
         except Exception as e:
-            print(f"Erreur LLM : {e}")
-            return ["rfl", "simp", "sorry"] # Fallback en cas d'erreur API
+            logger.error("LLM API call failed: %s", e, exc_info=True)
+            raise RuntimeError(f"LLM API error: {e}") from e
         
     def _evaluate_heuristic(self, proof_state):
         return random.random() # Pour l'MVP, valeur aléatoire. (À remplacer par un modèle de valeur).
@@ -66,17 +75,26 @@ class AlphaProofMiner:
     def mine(self, max_iterations=5):
         """Recherche MCTS. Restreint à 5 itérations pour l'interface web (éviter le timeout HTTP)."""
         root = MCTSNode(proof_state="by")
-        
+        llm_failures = 0
+
         for i in range(max_iterations):
-            print(f"--- Itération MCTS {i+1}/{max_iterations} ---")
+            logger.info("--- Itération MCTS %d/%d ---", i + 1, max_iterations)
             node = root
             # 1. SÉLECTION
             while node.children and not node.is_terminal:
                 node = max(node.children, key=lambda c: (c.value / (c.visits + 1e-6)) + 1.41 * math.sqrt(math.log(node.visits + 1) / (c.visits + 1e-6)))
-            
+
             # 2. EXPANSION
             if not node.is_terminal:
-                tactics = self._call_llm_for_tactics(node.proof_state)
+                try:
+                    tactics = self._call_llm_for_tactics(node.proof_state)
+                except RuntimeError:
+                    llm_failures += 1
+                    if llm_failures >= max_iterations:
+                        raise RuntimeError(
+                            "LLM API failed on all iterations; cannot mine"
+                        )
+                    continue
                 for tactic in tactics:
                     new_state = f"{node.proof_state}\n  {tactic}"
                     child = MCTSNode(proof_state=new_state, parent=node)
@@ -85,14 +103,14 @@ class AlphaProofMiner:
 
             # 3. SIMULATION / VÉRIFICATION LEAN
             is_valid, is_complete = Blockchain.verify_lean_proof(self.theorem_statement, node.proof_state)
-            
+
             if not is_valid:
                 node.is_terminal = True
                 reward = -1.0
             elif is_complete:
                 node.is_terminal = True
                 node.is_solved = True
-                return node.proof_state # PREUVE TROUVÉE !
+                return node.proof_state
             else:
                 reward = self._evaluate_heuristic(node.proof_state)
 
@@ -103,7 +121,7 @@ class AlphaProofMiner:
                 curr.value += reward
                 curr = curr.parent
 
-        return "by sorry" # Échec après X itérations
+        return "by sorry"
 
 # --- BLOCKCHAIN ---
 class Blockchain:
@@ -154,17 +172,34 @@ class Blockchain:
         try:
             with open(filename, "w") as f:
                 f.write(lean_code)
-            result = subprocess.run(["lean", filename], capture_output=True, text=True, timeout=10)
-            output = result.stdout + result.stderr
-            
-            if "error:" in output: return False, False
-            if "warning: declaration uses 'sorry'" in output: return True, False
-            return True, True
-        except Exception:
+        except OSError as e:
+            logger.error("Failed to write temp Lean file %s: %s", filename, e)
+            raise RuntimeError(f"Cannot write proof file: {e}") from e
+
+        try:
+            result = subprocess.run(
+                ["lean", filename], capture_output=True, text=True, timeout=30
+            )
+        except FileNotFoundError:
+            logger.error("Lean compiler not found in PATH")
+            raise RuntimeError(
+                "Lean 4 is not installed or not in PATH"
+            )
+        except subprocess.TimeoutExpired:
+            logger.warning("Lean verification timed out for proof: %s", proof_code[:80])
             return False, False
         finally:
-            if os.path.exists(filename):
+            try:
                 os.remove(filename)
+            except OSError:
+                pass
+
+        output = result.stdout + result.stderr
+        if "error:" in output:
+            return False, False
+        if "warning: declaration uses 'sorry'" in output:
+            return True, False
+        return True, True
 
 # --- FLASK APP ---
 app = Flask(__name__, template_folder='templates')
@@ -182,7 +217,10 @@ def new_wallet():
 
 @app.route('/mine', methods=['POST'])
 def mine():
-    values = request.get_json()
+    values = request.get_json(silent=True)
+    if values is None:
+        return jsonify({'error': 'Corps de requête JSON invalide'}), 400
+
     api_key = values.get('api_key')
     miner_address = values.get('address')
 
@@ -192,15 +230,24 @@ def mine():
     last_block = blockchain.last_block
     last_hash = blockchain.hash(last_block)
     problem = blockchain.get_problem_for_next_block(last_hash)
-    
-    miner = AlphaProofMiner(problem['statement'], api_key)
-    proof_code = miner.mine(max_iterations=4) # Limité pour éviter le timeout web
-    
-    # Vérifie si le minage a réussi (sans "sorry")
-    is_valid, is_complete = Blockchain.verify_lean_proof(problem['statement'], proof_code)
-    
+
+    try:
+        miner = AlphaProofMiner(problem['statement'], api_key)
+        proof_code = miner.mine(max_iterations=4)
+    except RuntimeError as e:
+        logger.error("Mining failed due to infrastructure error: %s", e)
+        return jsonify({'error': f'Erreur d\'infrastructure: {e}'}), 503
+    except Exception:
+        logger.exception("Unexpected error during mining")
+        return jsonify({'error': 'Erreur interne du serveur pendant le minage'}), 500
+
+    try:
+        is_valid, is_complete = Blockchain.verify_lean_proof(problem['statement'], proof_code)
+    except RuntimeError as e:
+        logger.error("Lean verification infrastructure error: %s", e)
+        return jsonify({'error': f'Erreur de vérification: {e}'}), 503
+
     if is_complete:
-        # Récompense
         blockchain.new_transaction(sender="0", recipient=miner_address, amount=1, data="Block Reward")
         block = blockchain.new_block(proof_code, last_hash)
         return jsonify({
@@ -217,15 +264,25 @@ def mine():
 
 @app.route('/transactions/new', methods=['POST'])
 def new_transaction():
-    values = request.get_json()
+    values = request.get_json(silent=True)
+    if values is None:
+        return jsonify({'error': 'Corps de requête JSON invalide'}), 400
+
     required = ['sender', 'recipient', 'amount']
     if not all(k in values for k in required):
         return jsonify({'error': 'Valeurs manquantes'}), 400
 
+    try:
+        amount = float(values['amount'])
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Le montant doit être un nombre valide'}), 400
+    if amount <= 0:
+        return jsonify({'error': 'Le montant doit être positif'}), 400
+
     index = blockchain.new_transaction(
-        values['sender'], 
-        values['recipient'], 
-        values['amount'],
+        values['sender'],
+        values['recipient'],
+        amount,
         values.get('data', '')
     )
     return jsonify({'message': f'Transaction en attente pour le bloc {index}'}), 201
@@ -238,8 +295,13 @@ def full_chain():
         'pending_transactions': blockchain.current_transactions
     }), 200
 
+@app.errorhandler(500)
+def internal_error(error):
+    logger.exception("Unhandled server error: %s", error)
+    return jsonify({'error': 'Erreur interne du serveur'}), 500
+
+
 if __name__ == '__main__':
-    # Création du dossier templates s'il n'existe pas
     os.makedirs('templates', exist_ok=True)
-    print("Démarrage du nœud MathChain sur http://localhost:5000")
+    logger.info("Démarrage du nœud MathChain sur http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)
