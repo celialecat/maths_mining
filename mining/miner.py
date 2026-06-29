@@ -1,4 +1,4 @@
-import random
+import logging
 from dataclasses import dataclass
 
 import config
@@ -6,6 +6,8 @@ from mining.lean_verifier import VerificationResult, verify_lean_proof
 from mining.llm_prover import LLMProver
 from mining.mcts import MCTSNode, expand, pick_random_child, select
 from mining.value_network import ProofValueNetwork
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +37,7 @@ class AlphaProofMiner:
         root = MCTSNode(proof_state="by")
         self._episode_trajectory = []
         mock_mode = False
+        llm_failures = 0
 
         for i in range(max_iterations):
             logs.append(f"Iteration {i + 1}/{max_iterations}")
@@ -44,11 +47,21 @@ class AlphaProofMiner:
 
             # 2. Expansion
             if not node.is_terminal:
-                tactics = self.llm.suggest_tactics(
-                    theorem_statement,
-                    node.proof_state,
-                    n=config.MCTS_MAX_TACTICS_PER_NODE,
-                )
+                try:
+                    tactics = self.llm.suggest_tactics(
+                        theorem_statement,
+                        node.proof_state,
+                        n=config.MCTS_MAX_TACTICS_PER_NODE,
+                    )
+                except RuntimeError as e:
+                    llm_failures += 1
+                    logs.append(f"  LLM error (attempt {llm_failures}): {e}")
+                    logger.warning("LLM failed on iteration %d: %s", i + 1, e)
+                    if llm_failures >= max_iterations:
+                        raise RuntimeError(
+                            "LLM API failed on all iterations; cannot mine"
+                        ) from e
+                    continue
                 new_children = expand(node, tactics)
                 logs.append(f"  Expanded with tactics: {tactics}")
                 node = pick_random_child(new_children) or node

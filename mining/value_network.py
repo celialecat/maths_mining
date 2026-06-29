@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 from typing import Optional
 
 import config
 from mining.heuristic import rule_based_heuristic
+
+logger = logging.getLogger(__name__)
 
 
 class ProofValueNetwork:
@@ -42,12 +45,19 @@ class ProofValueNetwork:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
-            if data.get("type") == "lookup_table":
-                self._model = data.get("table", {})
-            else:
-                print(f"Unknown model type in {path}, using heuristic")
-        except Exception as e:
-            print(f"Could not load value network from {path}: {e}")
+        except (OSError, json.JSONDecodeError) as e:
+            logger.error("Could not load value network from %s: %s", path, e)
+            return
+
+        if data.get("type") == "lookup_table":
+            self._model = data.get("table", {})
+            logger.info("Loaded lookup-table model from %s", path)
+        else:
+            logger.warning(
+                "Unknown model type '%s' in %s, using heuristic",
+                data.get("type"),
+                path,
+            )
 
     def _model_predict(self, proof_state: str) -> float:
         """Predict value using the loaded model.

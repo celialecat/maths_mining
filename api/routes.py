@@ -1,3 +1,4 @@
+import logging
 from uuid import uuid4
 
 from flask import Blueprint, jsonify, render_template
@@ -14,6 +15,8 @@ from mining.lean_verifier import is_lean_available, should_use_mock
 from mining.llm_prover import LLMProver
 from mining.miner import AlphaProofMiner
 from problems.problem_db import ProblemDB
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("api", __name__)
 
@@ -53,10 +56,17 @@ def mine_block():
     last_hash = last_block.compute_hash()
     problem = problem_db.get_problem_for_block(last_hash)
 
-    result = miner.mine(
-        theorem_statement=problem["statement"],
-        problem_id=problem["id"],
-    )
+    try:
+        result = miner.mine(
+            theorem_statement=problem["statement"],
+            problem_id=problem["id"],
+        )
+    except RuntimeError as e:
+        logger.error("Mining failed due to infrastructure error: %s", e)
+        return jsonify({"error": f"Infrastructure error: {e}"}), 503
+    except Exception:
+        logger.exception("Unexpected error during mining")
+        return jsonify({"error": "Internal server error during mining"}), 500
 
     if result.success:
         blockchain.add_reward_transaction(address)

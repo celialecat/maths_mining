@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class ProblemDB:
@@ -9,8 +12,22 @@ class ProblemDB:
             problems_file = os.path.join(
                 os.path.dirname(__file__), "problems.json"
             )
-        with open(problems_file, "r", encoding="utf-8") as f:
-            self.problems: list[dict] = json.load(f)
+        try:
+            with open(problems_file, "r", encoding="utf-8") as f:
+                self.problems: list[dict] = json.load(f)
+        except FileNotFoundError:
+            raise RuntimeError(
+                f"Problems database not found: {problems_file}"
+            )
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"Problems database is malformed JSON: {problems_file}: {e}"
+            )
+        if not self.problems:
+            raise RuntimeError(
+                f"Problems database is empty: {problems_file}"
+            )
+        logger.info("Loaded %d problems from %s", len(self.problems), problems_file)
 
     def get_problem(self, problem_id: int) -> Optional[dict]:
         for p in self.problems:

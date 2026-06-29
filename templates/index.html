@@ -144,15 +144,29 @@
                     llmEl.className = 'text-yellow-400';
                 }
             } catch (e) {
-                // ignore
+                const leanEl = document.getElementById('statusLean');
+                leanEl.textContent = 'Lean: unknown';
+                leanEl.className = 'text-red-400';
+                const llmEl = document.getElementById('statusLLM');
+                llmEl.textContent = 'LLM: unknown';
+                llmEl.className = 'text-red-400';
             }
         }
 
         // --- Wallet ---
         async function createWallet() {
-            const res = await fetch('/wallet/new');
-            const data = await res.json();
-            document.getElementById('myAddress').value = data.address;
+            try {
+                const res = await fetch('/wallet/new');
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || 'Server error (' + res.status + ')');
+                    return;
+                }
+                const data = await res.json();
+                document.getElementById('myAddress').value = data.address;
+            } catch (err) {
+                alert('Cannot connect to server. Is it running?');
+            }
         }
 
         // --- Transaction ---

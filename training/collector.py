@@ -1,8 +1,11 @@
 import json
+import logging
 import os
 from time import time
 
 import config
+
+logger = logging.getLogger(__name__)
 
 
 class EpisodeCollector:
@@ -35,19 +38,32 @@ class EpisodeCollector:
             ],
         }
         filepath = os.path.join(self.data_dir, "episodes.jsonl")
-        with open(filepath, "a", encoding="utf-8") as f:
-            f.write(json.dumps(episode) + "\n")
+        try:
+            with open(filepath, "a", encoding="utf-8") as f:
+                f.write(json.dumps(episode) + "\n")
+        except OSError as e:
+            logger.error("Failed to save episode to %s: %s", filepath, e)
 
     def load_episodes(self) -> list[dict]:
         filepath = os.path.join(self.data_dir, "episodes.jsonl")
         if not os.path.exists(filepath):
             return []
         episodes = []
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    episodes.append(json.loads(line))
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line_num, line in enumerate(f, start=1):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        episodes.append(json.loads(line))
+                    except json.JSONDecodeError as e:
+                        logger.warning(
+                            "Skipping malformed line %d in %s: %s",
+                            line_num, filepath, e,
+                        )
+        except OSError as e:
+            logger.error("Failed to read episodes from %s: %s", filepath, e)
         return episodes
 
     @property

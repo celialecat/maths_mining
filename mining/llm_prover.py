@@ -1,4 +1,8 @@
+import logging
+
 import config
+
+logger = logging.getLogger(__name__)
 
 FALLBACK_TACTICS = [
     "rfl",
@@ -48,6 +52,7 @@ class LLMProver:
         try:
             client = self._get_client()
             if client is None:
+                logger.warning("OpenAI client unavailable, using fallback tactics")
                 return self._fallback_tactics(n)
             response = client.chat.completions.create(
                 model=config.OPENAI_MODEL,
@@ -61,10 +66,13 @@ class LLMProver:
                 for line in content.splitlines()
                 if line.strip() and not line.strip().startswith("--")
             ]
-            return tactics[:n] if tactics else self._fallback_tactics(n)
+            if not tactics:
+                logger.warning("LLM returned no usable tactics, using fallback")
+                return self._fallback_tactics(n)
+            return tactics[:n]
         except Exception as e:
-            print(f"LLM error: {e}")
-            return self._fallback_tactics(n)
+            logger.error("LLM API call failed: %s", e, exc_info=True)
+            raise RuntimeError(f"LLM API error: {e}") from e
 
     def _fallback_tactics(self, n: int) -> list[str]:
         import random
