@@ -25,6 +25,25 @@
             <span id="statusLean" class="text-yellow-400">Lean: checking...</span>
             <span id="statusLLM" class="text-yellow-400">LLM: checking...</span>
             <span id="statusValid" class="text-gray-400">Valid: -</span>
+            <span id="statusUser" class="text-gray-400">Not logged in</span>
+        </div>
+    </div>
+
+    <!-- AUTH BANNER -->
+    <div id="authBanner" class="bg-indigo-50 border-b border-indigo-200 px-4 py-3">
+        <div class="container mx-auto max-w-6xl flex items-center justify-center gap-3">
+            <div id="authFormContainer" class="flex items-center gap-2">
+                <input type="text" id="authUsername" placeholder="Username" class="p-1.5 border rounded text-sm w-32">
+                <input type="password" id="authPassword" placeholder="Password" class="p-1.5 border rounded text-sm w-32">
+                <button onclick="doLogin()" class="bg-indigo-500 text-white px-3 py-1.5 rounded text-sm font-medium hover:bg-indigo-600 transition">Login</button>
+                <button onclick="doRegister()" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-300 transition">Register</button>
+                <span id="authError" class="text-xs text-red-600 hidden"></span>
+            </div>
+            <div id="authUserInfo" class="hidden flex items-center gap-3">
+                <span class="text-sm text-indigo-800">Logged in as <strong id="authDisplayName"></strong></span>
+                <span id="authWalletInfo" class="text-xs text-gray-500"></span>
+                <button onclick="doLogout()" class="bg-gray-200 text-gray-600 px-3 py-1.5 rounded text-sm font-medium hover:bg-gray-300 transition">Logout</button>
+            </div>
         </div>
     </div>
 
@@ -56,12 +75,12 @@
                     class="w-full p-3 border rounded text-sm font-mono bg-gray-50 focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none"></textarea>
                 <div class="flex gap-3 mt-2 items-center">
                     <button onclick="submitSolution()" id="submitBtn"
-                        class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition text-sm font-medium">
+                        class="bg-indigo-600 text-white px-6 py-2 rounded hover:bg-indigo-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                         Submit Solution
                     </button>
                     <span class="text-xs text-gray-400">or</span>
                     <button onclick="mineBlock()" id="mineBtn"
-                        class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition text-sm font-medium">
+                        class="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                         Auto-Mine (MCTS)
                     </button>
                 </div>
@@ -98,13 +117,14 @@
                 <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
                     <span class="text-2xl">1.</span> Wallet
                 </h2>
-                <button onclick="createWallet()" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 transition text-sm font-medium">
+                <button onclick="createWallet()" id="createWalletBtn" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Create Wallet
                 </button>
+                <p id="walletLoginHint" class="text-xs text-gray-400 mt-1">Login to create a wallet</p>
                 <div class="mt-4">
                     <label class="block text-sm font-medium text-gray-600 mb-1">Your Address</label>
                     <input type="text" id="myAddress" class="w-full p-2 border rounded bg-gray-50 text-sm font-mono"
-                           readonly placeholder="Click 'Create Wallet' to generate an address">
+                           readonly placeholder="Login and create a wallet">
                 </div>
             </div>
 
@@ -119,8 +139,8 @@
                        class="w-full mb-3 p-2 border rounded text-sm">
                 <input type="text" id="txData" placeholder="Data / memo (optional)"
                        class="w-full mb-3 p-2 border rounded text-sm">
-                <button onclick="sendTransaction()"
-                        class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition text-sm font-medium">
+                <button onclick="sendTransaction()" id="sendTxBtn"
+                        class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                     Send Transaction
                 </button>
                 <p id="txStatus" class="mt-2 text-sm font-medium hidden"></p>
@@ -195,6 +215,145 @@
 
     <script>
         var solvedProblems = [];
+        var authToken = localStorage.getItem('mathchain_token') || null;
+        var currentUser = null;
+
+        function authHeaders() {
+            var h = { 'Content-Type': 'application/json' };
+            if (authToken) h['Authorization'] = 'Bearer ' + authToken;
+            return h;
+        }
+
+        function updateAuthUI() {
+            var formContainer = document.getElementById('authFormContainer');
+            var userInfo = document.getElementById('authUserInfo');
+            var statusUser = document.getElementById('statusUser');
+            var walletBtn = document.getElementById('createWalletBtn');
+            var walletHint = document.getElementById('walletLoginHint');
+            var submitBtn = document.getElementById('submitBtn');
+            var mineBtn = document.getElementById('mineBtn');
+            var sendTxBtn = document.getElementById('sendTxBtn');
+
+            if (currentUser) {
+                formContainer.classList.add('hidden');
+                userInfo.classList.remove('hidden');
+                document.getElementById('authDisplayName').textContent = currentUser.username;
+                statusUser.textContent = currentUser.username;
+                statusUser.className = 'text-green-400';
+
+                walletBtn.disabled = false;
+                walletHint.classList.add('hidden');
+                submitBtn.disabled = false;
+                mineBtn.disabled = false;
+                sendTxBtn.disabled = false;
+
+                if (currentUser.wallet_address) {
+                    document.getElementById('myAddress').value = currentUser.wallet_address;
+                    document.getElementById('authWalletInfo').textContent = 'Wallet: ' + currentUser.wallet_address.substring(0, 12) + '...';
+                } else {
+                    document.getElementById('authWalletInfo').textContent = 'No wallet yet';
+                }
+            } else {
+                formContainer.classList.remove('hidden');
+                userInfo.classList.add('hidden');
+                statusUser.textContent = 'Not logged in';
+                statusUser.className = 'text-gray-400';
+
+                walletBtn.disabled = true;
+                walletHint.classList.remove('hidden');
+                submitBtn.disabled = true;
+                mineBtn.disabled = true;
+                sendTxBtn.disabled = true;
+                document.getElementById('myAddress').value = '';
+                document.getElementById('myAddress').placeholder = 'Login and create a wallet';
+            }
+        }
+
+        async function checkAuth() {
+            if (!authToken) {
+                currentUser = null;
+                updateAuthUI();
+                return;
+            }
+            try {
+                var res = await fetch('/auth/me', { headers: authHeaders() });
+                var data = await res.json();
+                if (data.logged_in) {
+                    currentUser = data;
+                } else {
+                    authToken = null;
+                    localStorage.removeItem('mathchain_token');
+                    currentUser = null;
+                }
+            } catch (e) {
+                currentUser = null;
+            }
+            updateAuthUI();
+        }
+
+        function showAuthError(msg) {
+            var el = document.getElementById('authError');
+            el.textContent = msg;
+            el.classList.remove('hidden');
+            setTimeout(function() { el.classList.add('hidden'); }, 4000);
+        }
+
+        async function doRegister() {
+            var username = document.getElementById('authUsername').value.trim();
+            var password = document.getElementById('authPassword').value;
+            if (!username || !password) { showAuthError('Enter username and password'); return; }
+            try {
+                var res = await fetch('/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, password: password })
+                });
+                var data = await res.json();
+                if (res.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('mathchain_token', authToken);
+                    document.getElementById('authUsername').value = '';
+                    document.getElementById('authPassword').value = '';
+                    await checkAuth();
+                } else {
+                    showAuthError(data.error || 'Registration failed');
+                }
+            } catch (e) {
+                showAuthError('Connection error');
+            }
+        }
+
+        async function doLogin() {
+            var username = document.getElementById('authUsername').value.trim();
+            var password = document.getElementById('authPassword').value;
+            if (!username || !password) { showAuthError('Enter username and password'); return; }
+            try {
+                var res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username: username, password: password })
+                });
+                var data = await res.json();
+                if (res.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('mathchain_token', authToken);
+                    document.getElementById('authUsername').value = '';
+                    document.getElementById('authPassword').value = '';
+                    await checkAuth();
+                } else {
+                    showAuthError(data.error || 'Login failed');
+                }
+            } catch (e) {
+                showAuthError('Connection error');
+            }
+        }
+
+        function doLogout() {
+            authToken = null;
+            localStorage.removeItem('mathchain_token');
+            currentUser = null;
+            updateAuthUI();
+        }
 
         // --- Status ---
         async function fetchStatus() {
@@ -255,9 +414,8 @@
 
         // --- Submit Solution ---
         async function submitSolution() {
-            var address = document.getElementById('myAddress').value;
-            if (!address) {
-                showSolutionStatus('Create a wallet first.', false);
+            if (!currentUser) {
+                showSolutionStatus('Login first.', false);
                 return;
             }
             var proof = document.getElementById('solutionProof').value.trim();
@@ -274,8 +432,8 @@
             try {
                 var res = await fetch('/solutions/submit', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: address, proof: proof })
+                    headers: authHeaders(),
+                    body: JSON.stringify({ proof: proof })
                 });
                 var data = await res.json();
 
@@ -313,22 +471,24 @@
 
         // --- Wallet ---
         async function createWallet() {
-            var res = await fetch('/wallet/new');
+            if (!currentUser) { alert('Login first.'); return; }
+            var res = await fetch('/wallet/new', { headers: authHeaders() });
             var data = await res.json();
-            document.getElementById('myAddress').value = data.address;
+            if (res.ok) {
+                document.getElementById('myAddress').value = data.address;
+                await checkAuth();
+            } else {
+                alert(data.error || 'Failed to create wallet');
+            }
         }
 
         // --- Transaction ---
         async function sendTransaction() {
-            var sender = document.getElementById('myAddress').value;
+            if (!currentUser) { showTxStatus('Login first.', false); return; }
             var recipient = document.getElementById('txRecipient').value;
             var amount = parseFloat(document.getElementById('txAmount').value);
             var data = document.getElementById('txData').value;
 
-            if (!sender) {
-                showTxStatus('Create a wallet first.', false);
-                return;
-            }
             if (!recipient) {
                 showTxStatus('Enter a recipient address.', false);
                 return;
@@ -341,8 +501,8 @@
             try {
                 var res = await fetch('/transactions/new', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ sender: sender, recipient: recipient, amount: amount, data: data })
+                    headers: authHeaders(),
+                    body: JSON.stringify({ recipient: recipient, amount: amount, data: data })
                 });
                 var result = await res.json();
                 if (res.ok) {
@@ -365,9 +525,8 @@
 
         // --- Auto Mining ---
         async function mineBlock() {
-            var address = document.getElementById('myAddress').value;
-            if (!address) {
-                alert('Create a wallet first.');
+            if (!currentUser) {
+                alert('Login first.');
                 return;
             }
 
@@ -382,8 +541,8 @@
             try {
                 var res = await fetch('/mine', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ address: address })
+                    headers: authHeaders(),
+                    body: JSON.stringify({})
                 });
                 var data = await res.json();
                 var resultDiv = document.getElementById('miningResult');
@@ -654,6 +813,7 @@
         }
 
         // --- Init & Auto-Refresh ---
+        checkAuth();
         fetchStatus();
         fetchCurrentProblem();
         fetchChain();

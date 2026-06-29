@@ -1,7 +1,15 @@
 from uuid import uuid4
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, request
 
+from api.auth import (
+    assign_wallet,
+    get_current_user,
+    get_user_wallet,
+    login_required,
+    login_user,
+    register_user,
+)
 from api.validators import (
     get_json_body,
     require_fields,
@@ -32,23 +40,72 @@ def index():
     return render_template("index.html")
 
 
-@bp.route("/wallet/new", methods=["GET"])
-def new_wallet():
-    address = uuid4().hex
-    return jsonify({"address": address}), 200
+# --- Auth ---
 
-
-@bp.route("/mine", methods=["POST"])
-def mine_block():
+@bp.route("/auth/register", methods=["POST"])
+def auth_register():
     body, err = get_json_body()
     if body is None:
         return jsonify({"error": err}), 400
 
-    ok, err = require_fields(body, ["address"])
+    ok, err = require_fields(body, ["username", "password"])
     if not ok:
         return jsonify({"error": err}), 400
 
-    address = body["address"]
+    result, err = register_user(body["username"].strip(), body["password"])
+    if result is None:
+        return jsonify({"error": err}), 400
+    return jsonify(result), 201
+
+
+@bp.route("/auth/login", methods=["POST"])
+def auth_login():
+    body, err = get_json_body()
+    if body is None:
+        return jsonify({"error": err}), 400
+
+    ok, err = require_fields(body, ["username", "password"])
+    if not ok:
+        return jsonify({"error": err}), 400
+
+    result, err = login_user(body["username"].strip(), body["password"])
+    if result is None:
+        return jsonify({"error": err}), 401
+    return jsonify(result), 200
+
+
+@bp.route("/auth/me", methods=["GET"])
+def auth_me():
+    user = get_current_user()
+    if user is None:
+        return jsonify({"logged_in": False}), 200
+    return jsonify({"logged_in": True, **user}), 200
+
+
+# --- Wallet ---
+
+@bp.route("/wallet/new", methods=["GET"])
+@login_required
+def new_wallet():
+    user = request.current_user
+    existing = get_user_wallet(user["username"])
+    if existing:
+        return jsonify({"address": existing, "message": "Wallet already exists"}), 200
+    address = uuid4().hex
+    assign_wallet(user["username"], address)
+    return jsonify({"address": address}), 200
+
+
+# --- Mining ---
+
+@bp.route("/mine", methods=["POST"])
+@login_required
+def mine_block():
+    user = request.current_user
+    address = get_user_wallet(user["username"])
+    if not address:
+        return jsonify({"error": "Create a wallet first"}), 400
+
     ok, err = validate_address(address)
     if not ok:
         return jsonify({"error": err}), 400
@@ -91,16 +148,22 @@ def mine_block():
 
 
 @bp.route("/transactions/new", methods=["POST"])
+@login_required
 def new_transaction():
+    user = request.current_user
     body, err = get_json_body()
     if body is None:
         return jsonify({"error": err}), 400
 
-    ok, err = require_fields(body, ["sender", "recipient", "amount"])
+    ok, err = require_fields(body, ["recipient", "amount"])
     if not ok:
         return jsonify({"error": err}), 400
 
-    ok, err = validate_address(body["sender"])
+    sender = get_user_wallet(user["username"])
+    if not sender:
+        return jsonify({"error": "Create a wallet first"}), 400
+
+    ok, err = validate_address(sender)
     if not ok:
         return jsonify({"error": f"Sender: {err}"}), 400
 
@@ -113,7 +176,7 @@ def new_transaction():
         return jsonify({"error": err}), 400
 
     tx = Transaction(
-        sender=body["sender"],
+        sender=sender,
         recipient=body["recipient"],
         amount=amount,
         data=body.get("data", ""),
@@ -168,19 +231,20 @@ def current_problem():
 
 
 @bp.route("/solutions/submit", methods=["POST"])
+@login_required
 def submit_solution():
+    user = request.current_user
     body, err = get_json_body()
     if body is None:
         return jsonify({"error": err}), 400
 
-    ok, err = require_fields(body, ["address", "proof"])
+    ok, err = require_fields(body, ["proof"])
     if not ok:
         return jsonify({"error": err}), 400
 
-    address = body["address"]
-    ok, err = validate_address(address)
-    if not ok:
-        return jsonify({"error": err}), 400
+    address = get_user_wallet(user["username"])
+    if not address:
+        return jsonify({"error": "Create a wallet first"}), 400
 
     proof_code = body["proof"].strip()
     if not proof_code:
