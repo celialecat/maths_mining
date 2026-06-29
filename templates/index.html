@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MathChain - Proof of Useful Work</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .log-line { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .block-card { transition: all 0.2s ease; }
+        .block-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans min-h-screen">
+
+    <!-- STATUS BAR -->
+    <div id="statusBar" class="bg-gray-800 text-gray-300 text-xs px-4 py-2 flex justify-between items-center">
+        <span>MathChain Node</span>
+        <div id="statusIndicators" class="flex gap-4">
+            <span id="statusChainLen">Chain: -</span>
+            <span id="statusPending">Pending TX: -</span>
+            <span id="statusLean" class="text-yellow-400">Lean: checking...</span>
+            <span id="statusLLM" class="text-yellow-400">LLM: checking...</span>
+        </div>
+    </div>
+
+    <div class="container mx-auto p-6 max-w-6xl">
+        <h1 class="text-4xl font-bold text-center text-indigo-600 mb-2">MathChain</h1>
+        <p class="text-center text-gray-500 mb-8">Blockchain powered by mathematical proof-of-work</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- WALLET -->
+            <div class="bg-white p-6 rounded-lg shadow-sm border">
+                <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <span class="text-2xl">1.</span> Wallet
+                </h2>
+                <button onclick="createWallet()" class="bg-indigo-500 text-white px-4 py-2 rounded hover:bg-indigo-600 transition text-sm font-medium">
+                    Create Wallet
+                </button>
+                <div class="mt-4">
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Your Address</label>
+                    <input type="text" id="myAddress" class="w-full p-2 border rounded bg-gray-50 text-sm font-mono"
+                           readonly placeholder="Click 'Create Wallet' to generate an address">
+                </div>
+            </div>
+
+            <!-- TRANSACTION -->
+            <div class="bg-white p-6 rounded-lg shadow-sm border">
+                <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <span class="text-2xl">2.</span> New Transaction
+                </h2>
+                <input type="text" id="txRecipient" placeholder="Recipient address"
+                       class="w-full mb-3 p-2 border rounded text-sm">
+                <input type="number" id="txAmount" placeholder="Amount (e.g. 1.5)" min="0.01" step="0.01"
+                       class="w-full mb-3 p-2 border rounded text-sm">
+                <input type="text" id="txData" placeholder="Data / memo (optional)"
+                       class="w-full mb-3 p-2 border rounded text-sm">
+                <button onclick="sendTransaction()"
+                        class="w-full bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition text-sm font-medium">
+                    Send Transaction
+                </button>
+                <p id="txStatus" class="mt-2 text-sm font-medium hidden"></p>
+            </div>
+
+            <!-- MINING -->
+            <div class="bg-white p-6 rounded-lg shadow-sm border md:col-span-2">
+                <h2 class="text-xl font-semibold mb-2 flex items-center gap-2">
+                    <span class="text-2xl">3.</span> Mine a Block
+                </h2>
+                <p class="text-sm text-gray-500 mb-4">
+                    Proof-of-work = solving a math theorem using MCTS + LLM, verified by Lean 4.
+                </p>
+
+                <button onclick="mineBlock()" id="mineBtn"
+                        class="bg-purple-600 text-white px-6 py-3 rounded hover:bg-purple-700 transition font-bold text-sm">
+                    Start Mining
+                </button>
+
+                <div id="miningProgress" class="hidden mt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                        <div class="w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span class="text-sm text-purple-600 font-medium" id="miningStatusText">Mining in progress...</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded h-1.5">
+                        <div class="bg-purple-600 h-1.5 rounded animate-pulse" style="width: 100%"></div>
+                    </div>
+                </div>
+
+                <div id="miningResult" class="hidden mt-4 rounded-lg overflow-hidden">
+                    <div id="miningResultHeader" class="px-4 py-2 text-sm font-medium"></div>
+                    <div id="miningResultBody" class="p-4 text-sm font-mono whitespace-pre-wrap"></div>
+                </div>
+
+                <div id="miningLogs" class="hidden mt-4">
+                    <button onclick="toggleLogs()" class="text-xs text-gray-500 hover:text-gray-700 mb-1">
+                        Toggle mining logs
+                    </button>
+                    <div id="miningLogsContent" class="hidden bg-gray-900 text-gray-300 p-3 rounded text-xs font-mono max-h-48 overflow-auto"></div>
+                </div>
+            </div>
+
+            <!-- BLOCK EXPLORER -->
+            <div class="bg-white p-6 rounded-lg shadow-sm border md:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-semibold flex items-center gap-2">
+                        <span class="text-2xl">4.</span> Block Explorer
+                    </h2>
+                    <button onclick="fetchChain()" class="bg-gray-100 text-gray-700 px-3 py-1.5 rounded hover:bg-gray-200 transition text-sm">
+                        Refresh
+                    </button>
+                </div>
+                <div id="chainDisplay" class="space-y-3"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // --- Status ---
+        async function fetchStatus() {
+            try {
+                const res = await fetch('/status');
+                const s = await res.json();
+                document.getElementById('statusChainLen').textContent = 'Chain: ' + s.chain_length;
+                document.getElementById('statusPending').textContent = 'Pending TX: ' + s.pending_transactions;
+
+                const leanEl = document.getElementById('statusLean');
+                if (s.mock_mode) {
+                    leanEl.textContent = 'Lean: Mock Mode';
+                    leanEl.className = 'text-yellow-400';
+                } else {
+                    leanEl.textContent = 'Lean: Connected';
+                    leanEl.className = 'text-green-400';
+                }
+
+                const llmEl = document.getElementById('statusLLM');
+                if (s.llm_available) {
+                    llmEl.textContent = 'LLM: Connected';
+                    llmEl.className = 'text-green-400';
+                } else {
+                    llmEl.textContent = 'LLM: Fallback';
+                    llmEl.className = 'text-yellow-400';
+                }
+            } catch (e) {
+                // ignore
+            }
+        }
+
+        // --- Wallet ---
+        async function createWallet() {
+            const res = await fetch('/wallet/new');
+            const data = await res.json();
+            document.getElementById('myAddress').value = data.address;
+        }
+
+        // --- Transaction ---
+        async function sendTransaction() {
+            const sender = document.getElementById('myAddress').value;
+            const recipient = document.getElementById('txRecipient').value;
+            const amount = parseFloat(document.getElementById('txAmount').value);
+            const data = document.getElementById('txData').value;
+
+            if (!sender) {
+                showTxStatus('Create a wallet first.', false);
+                return;
+            }
+            if (!recipient) {
+                showTxStatus('Enter a recipient address.', false);
+                return;
+            }
+            if (!amount || amount <= 0) {
+                showTxStatus('Enter a valid positive amount.', false);
+                return;
+            }
+
+            try {
+                const res = await fetch('/transactions/new', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ sender, recipient, amount, data })
+                });
+                const result = await res.json();
+                if (res.ok) {
+                    showTxStatus(result.message, true);
+                    fetchStatus();
+                } else {
+                    showTxStatus(result.error || 'Transaction failed.', false);
+                }
+            } catch (err) {
+                showTxStatus('Connection error.', false);
+            }
+        }
+
+        function showTxStatus(msg, success) {
+            const el = document.getElementById('txStatus');
+            el.textContent = msg;
+            el.className = 'mt-2 text-sm font-medium ' + (success ? 'text-green-600' : 'text-red-600');
+            el.classList.remove('hidden');
+        }
+
+        // --- Mining ---
+        async function mineBlock() {
+            const address = document.getElementById('myAddress').value;
+            if (!address) {
+                alert('Create a wallet first.');
+                return;
+            }
+
+            const btn = document.getElementById('mineBtn');
+            btn.disabled = true;
+            btn.textContent = 'Mining...';
+            btn.classList.add('opacity-50');
+            document.getElementById('miningProgress').classList.remove('hidden');
+            document.getElementById('miningResult').classList.add('hidden');
+            document.getElementById('miningLogs').classList.add('hidden');
+
+            try {
+                const res = await fetch('/mine', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ address })
+                });
+                const data = await res.json();
+                const resultDiv = document.getElementById('miningResult');
+                const header = document.getElementById('miningResultHeader');
+                const body = document.getElementById('miningResultBody');
+                resultDiv.classList.remove('hidden');
+
+                const mockBadge = data.mock_mode ? ' [Mock Mode]' : '';
+
+                if (res.ok) {
+                    header.className = 'px-4 py-2 text-sm font-medium bg-green-100 text-green-800';
+                    header.textContent = 'Block #' + data.block_index + ' mined successfully!' + mockBadge;
+                    body.className = 'p-4 text-sm font-mono whitespace-pre-wrap bg-green-50 text-green-900';
+                    body.textContent = 'Theorem: ' + (data.theorem_title || data.theorem) +
+                        '\n\nLean statement:\n' + data.theorem +
+                        '\n\nProof:\n' + data.proof +
+                        '\n\nIterations: ' + data.iterations;
+                    fetchChain();
+                    fetchStatus();
+                } else {
+                    header.className = 'px-4 py-2 text-sm font-medium bg-red-100 text-red-800';
+                    header.textContent = 'Mining failed' + mockBadge;
+                    body.className = 'p-4 text-sm font-mono whitespace-pre-wrap bg-red-50 text-red-900';
+                    body.textContent = data.error +
+                        '\n\nBest attempt:\n' + data.best_attempt +
+                        '\n\nIterations: ' + data.iterations;
+                }
+
+                // Logs
+                if (data.logs && data.logs.length > 0) {
+                    document.getElementById('miningLogs').classList.remove('hidden');
+                    const logsDiv = document.getElementById('miningLogsContent');
+                    logsDiv.innerHTML = '';
+                    data.logs.forEach(function(line) {
+                        const el = document.createElement('div');
+                        el.className = 'log-line';
+                        el.textContent = line;
+                        logsDiv.appendChild(el);
+                    });
+                }
+            } catch (err) {
+                alert('Connection error: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Start Mining';
+                btn.classList.remove('opacity-50');
+                document.getElementById('miningProgress').classList.add('hidden');
+            }
+        }
+
+        function toggleLogs() {
+            document.getElementById('miningLogsContent').classList.toggle('hidden');
+        }
+
+        // --- Block Explorer ---
+        async function fetchChain() {
+            try {
+                const res = await fetch('/chain');
+                const data = await res.json();
+                const container = document.getElementById('chainDisplay');
+                container.innerHTML = '';
+
+                if (data.pending_transactions && data.pending_transactions.length > 0) {
+                    const pendingDiv = document.createElement('div');
+                    pendingDiv.className = 'bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-2';
+                    pendingDiv.innerHTML = '<div class="text-sm font-semibold text-yellow-700 mb-1">Pending Transactions (' +
+                        data.pending_transactions.length + ')</div>';
+                    data.pending_transactions.forEach(function(tx) {
+                        const txEl = document.createElement('div');
+                        txEl.className = 'text-xs text-yellow-600 font-mono';
+                        txEl.textContent = tx.sender.substring(0, 8) + '... -> ' +
+                            tx.recipient.substring(0, 8) + '... : ' + tx.amount;
+                        pendingDiv.appendChild(txEl);
+                    });
+                    container.appendChild(pendingDiv);
+                }
+
+                const blocks = data.chain.slice().reverse();
+                blocks.forEach(function(block) {
+                    const card = document.createElement('div');
+                    card.className = 'block-card bg-white border rounded-lg p-4';
+
+                    let txHtml = '';
+                    if (block.transactions && block.transactions.length > 0) {
+                        txHtml = '<div class="mt-2 space-y-1">';
+                        block.transactions.forEach(function(tx) {
+                            const isCoinbase = tx.sender === '0';
+                            const label = isCoinbase ? 'Reward' : 'Transfer';
+                            const color = isCoinbase ? 'text-green-600' : 'text-blue-600';
+                            txHtml += '<div class="text-xs font-mono ' + color + '">' +
+                                label + ': ' + tx.amount + ' to ' + tx.recipient.substring(0, 12) + '...' +
+                                (tx.data ? ' (' + escapeHtml(tx.data) + ')' : '') + '</div>';
+                        });
+                        txHtml += '</div>';
+                    }
+
+                    const isGenesis = block.index === 0;
+                    const proofDisplay = isGenesis ? 'Genesis Block' : escapeHtml(block.proof);
+
+                    card.innerHTML =
+                        '<div class="flex justify-between items-start">' +
+                            '<div class="text-sm font-semibold text-gray-800">Block #' + block.index + '</div>' +
+                            '<div class="text-xs text-gray-400">' + new Date(block.timestamp * 1000).toLocaleString() + '</div>' +
+                        '</div>' +
+                        '<div class="text-xs text-gray-500 font-mono mt-1 truncate">Hash prev: ' +
+                            block.previous_hash.substring(0, 24) + '...</div>' +
+                        (block.problem_id >= 0 ? '<div class="text-xs text-indigo-500 mt-1">Problem #' + block.problem_id + '</div>' : '') +
+                        '<div class="text-xs text-gray-600 mt-2 font-mono bg-gray-50 p-2 rounded max-h-20 overflow-auto">' +
+                            proofDisplay + '</div>' +
+                        txHtml;
+
+                    container.appendChild(card);
+                });
+
+                if (blocks.length === 0) {
+                    container.innerHTML = '<p class="text-gray-400 text-sm text-center">No blocks yet.</p>';
+                }
+            } catch (e) {
+                document.getElementById('chainDisplay').innerHTML =
+                    '<p class="text-red-400 text-sm">Error loading chain.</p>';
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // --- Init ---
+        fetchStatus();
+        fetchChain();
+        setInterval(fetchStatus, 10000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+[
+  {
+    "id": 0,
+    "title": "Addition with zero (right identity)",
+    "statement": "theorem add_zero_custom (n : Nat) : n + 0 = n",
+    "difficulty": "trivial",
+    "source": "Basic Peano arithmetic",
+    "known_proofs": ["by simp", "by omega"]
+  },
+  {
+    "id": 1,
+    "title": "Reflexivity of equality",
+    "statement": "theorem eq_self (a : Nat) : a = a",
+    "difficulty": "trivial",
+    "source": "Basic logic",
+    "known_proofs": ["by rfl"]
+  },
+  {
+    "id": 2,
+    "title": "Commutativity of addition",
+    "statement": "theorem add_comm_custom (a b : Nat) : a + b = b + a",
+    "difficulty": "easy",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by omega", "by simp [Nat.add_comm]"]
+  },
+  {
+    "id": 3,
+    "title": "Associativity of addition",
+    "statement": "theorem add_assoc_custom (a b c : Nat) : (a + b) + c = a + (b + c)",
+    "difficulty": "easy",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by omega", "by simp [Nat.add_assoc]"]
+  },
+  {
+    "id": 4,
+    "title": "Zero is left identity for addition",
+    "statement": "theorem zero_add_custom (n : Nat) : 0 + n = n",
+    "difficulty": "trivial",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by simp", "by omega"]
+  },
+  {
+    "id": 5,
+    "title": "Successor distributes over addition",
+    "statement": "theorem succ_add_custom (a b : Nat) : (a + 1) + b = (a + b) + 1",
+    "difficulty": "easy",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by omega"]
+  },
+  {
+    "id": 6,
+    "title": "Multiplication by zero",
+    "statement": "theorem mul_zero_custom (n : Nat) : n * 0 = 0",
+    "difficulty": "trivial",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by simp"]
+  },
+  {
+    "id": 7,
+    "title": "Commutativity of multiplication",
+    "statement": "theorem mul_comm_custom (a b : Nat) : a * b = b * a",
+    "difficulty": "moderate",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by ring", "by simp [Nat.mul_comm]"]
+  },
+  {
+    "id": 8,
+    "title": "Distributivity of multiplication over addition",
+    "statement": "theorem left_distrib_custom (a b c : Nat) : a * (b + c) = a * b + a * c",
+    "difficulty": "moderate",
+    "source": "Peano arithmetic",
+    "known_proofs": ["by ring"]
+  },
+  {
+    "id": 9,
+    "title": "n + n = 2 * n",
+    "statement": "theorem double_eq_two_mul (n : Nat) : n + n = 2 * n",
+    "difficulty": "moderate",
+    "source": "Elementary number theory",
+    "known_proofs": ["by omega", "by ring"]
+  }
+]
