@@ -1,23 +1,30 @@
 import hashlib
 import json
-import subprocess
 import os
-import math
 import random
 from time import time
-from urllib.parse import urlparse
 from uuid import uuid4
 
 import requests
 from flask import Flask, jsonify, request, render_template
 from openai import OpenAI
 
-# --- BASE DE DONNÉES DE PROBLÈMES ---
-# Pour l'MVP, on utilise des théorèmes simples pour que le minage ne prenne pas des heures.
-PROBLEM_DB = [
-    {"id": 0, "statement": "theorem add_zero_custom (n : Nat) : n + 0 = n :="},
-    {"id": 1, "statement": "theorem eq_self (a : Nat) : a = a :="},
-]
+from config import (
+    GENESIS_PREVIOUS_HASH,
+    GENESIS_PROOF,
+    LLM_FALLBACK_TACTICS,
+    LLM_MAX_TOKENS,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    MCTS_DEFAULT_MAX_ITERATIONS,
+    MCTS_WEB_MAX_ITERATIONS,
+    MINING_REWARD_AMOUNT,
+    PROBLEM_DB,
+)
+from utils.lean_verifier import verify_lean_proof
+from utils.mcts_utils import ucb1_score
+from utils.validation import validate_json_fields
+
 
 # --- ALGORITHME MCTS + LLM (Le Mineur) ---
 class MCTSNode:
@@ -30,50 +37,54 @@ class MCTSNode:
         self.is_terminal = False
         self.is_solved = False
 
+
 class AlphaProofMiner:
     def __init__(self, theorem_statement, api_key):
         self.theorem_statement = theorem_statement
         self.client = OpenAI(api_key=api_key)
-        
+
     def _call_llm_for_tactics(self, current_proof):
-        """Appel RÉEL à OpenAI pour générer des tactiques Lean 4."""
+        """Appel a OpenAI pour generer des tactiques Lean 4."""
         prompt = f"""
-        Tu es un expert en Lean 4. Voici le théorème à prouver :
+        Tu es un expert en Lean 4. Voici le theoreme a prouver :
         {self.theorem_statement}
         
-        Voici l'état actuel de la preuve :
+        Voici l'etat actuel de la preuve :
         {current_proof}
         
-        Génère 3 tactiques Lean 4 possibles pour continuer la preuve. 
+        Genere 3 tactiques Lean 4 possibles pour continuer la preuve. 
         Ne fournis que les tactiques, une par ligne, sans aucune explication.
         """
         try:
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo", # Rapide et économique pour les tests
+                model=LLM_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=50,
-                temperature=0.7
+                max_tokens=LLM_MAX_TOKENS,
+                temperature=LLM_TEMPERATURE,
             )
             content = response.choices[0].message.content
             return [line.strip() for line in content.split('\n') if line.strip()]
         except Exception as e:
             print(f"Erreur LLM : {e}")
-            return ["rfl", "simp", "sorry"] # Fallback en cas d'erreur API
-        
-    def _evaluate_heuristic(self, proof_state):
-        return random.random() # Pour l'MVP, valeur aléatoire. (À remplacer par un modèle de valeur).
+            return LLM_FALLBACK_TACTICS
 
-    def mine(self, max_iterations=5):
-        """Recherche MCTS. Restreint à 5 itérations pour l'interface web (éviter le timeout HTTP)."""
+    def _evaluate_heuristic(self, proof_state):
+        return random.random()
+
+    def mine(self, max_iterations=MCTS_DEFAULT_MAX_ITERATIONS):
+        """Recherche MCTS. Restreint pour l'interface web (eviter le timeout HTTP)."""
         root = MCTSNode(proof_state="by")
-        
+
         for i in range(max_iterations):
-            print(f"--- Itération MCTS {i+1}/{max_iterations} ---")
+            print(f"--- Iteration MCTS {i+1}/{max_iterations} ---")
             node = root
-            # 1. SÉLECTION
+            # 1. SELECTION (UCB1)
             while node.children and not node.is_terminal:
-                node = max(node.children, key=lambda c: (c.value / (c.visits + 1e-6)) + 1.41 * math.sqrt(math.log(node.visits + 1) / (c.visits + 1e-6)))
-            
+                node = max(
+                    node.children,
+                    key=lambda c: ucb1_score(c.value, c.visits, node.visits),
+                )
+
             # 2. EXPANSION
             if not node.is_terminal:
                 tactics = self._call_llm_for_tactics(node.proof_state)
@@ -83,27 +94,28 @@ class AlphaProofMiner:
                     node.children.append(child)
                 node = random.choice(node.children) if node.children else node
 
-            # 3. SIMULATION / VÉRIFICATION LEAN
-            is_valid, is_complete = Blockchain.verify_lean_proof(self.theorem_statement, node.proof_state)
-            
+            # 3. SIMULATION / VERIFICATION LEAN
+            is_valid, is_complete = verify_lean_proof(self.theorem_statement, node.proof_state)
+
             if not is_valid:
                 node.is_terminal = True
                 reward = -1.0
             elif is_complete:
                 node.is_terminal = True
                 node.is_solved = True
-                return node.proof_state # PREUVE TROUVÉE !
+                return node.proof_state
             else:
                 reward = self._evaluate_heuristic(node.proof_state)
 
-            # 4. RÉTROPROPAGATION
+            # 4. RETROPROPAGATION
             curr = node
             while curr is not None:
                 curr.visits += 1
                 curr.value += reward
                 curr = curr.parent
 
-        return "by sorry" # Échec après X itérations
+        return "by sorry"
+
 
 # --- BLOCKCHAIN ---
 class Blockchain:
@@ -111,7 +123,7 @@ class Blockchain:
         self.current_transactions = []
         self.chain = []
         self.nodes = set()
-        self.new_block(proof="by rfl", previous_hash='1')
+        self.new_block(proof=GENESIS_PROOF, previous_hash=GENESIS_PREVIOUS_HASH)
 
     def new_block(self, proof, previous_hash):
         block = {
@@ -130,7 +142,7 @@ class Blockchain:
             'sender': sender,
             'recipient': recipient,
             'amount': amount,
-            'data': data
+            'data': data,
         })
         return self.last_block['index'] + 1
 
@@ -147,99 +159,84 @@ class Blockchain:
         seed = int(last_hash, 16)
         return PROBLEM_DB[seed % len(PROBLEM_DB)]
 
-    @staticmethod
-    def verify_lean_proof(theorem_statement, proof_code):
-        lean_code = f"import Mathlib\n\n{theorem_statement}\n{proof_code}\n"
-        filename = f"temp_proof_{uuid4().hex[:8]}.lean"
-        try:
-            with open(filename, "w") as f:
-                f.write(lean_code)
-            result = subprocess.run(["lean", filename], capture_output=True, text=True, timeout=10)
-            output = result.stdout + result.stderr
-            
-            if "error:" in output: return False, False
-            if "warning: declaration uses 'sorry'" in output: return True, False
-            return True, True
-        except Exception:
-            return False, False
-        finally:
-            if os.path.exists(filename):
-                os.remove(filename)
 
 # --- FLASK APP ---
 app = Flask(__name__, template_folder='templates')
 blockchain = Blockchain()
 
+
 @app.route('/')
 def index():
     return render_template('index.html')
 
+
 @app.route('/wallet/new', methods=['GET'])
 def new_wallet():
-    # Pour l'MVP, on génère un simple UUID en guise de clé publique
     address = str(uuid4()).replace('-', '')
     return jsonify({'address': address}), 200
 
+
 @app.route('/mine', methods=['POST'])
 def mine():
-    values = request.get_json()
-    api_key = values.get('api_key')
-    miner_address = values.get('address')
-
-    if not api_key or not miner_address:
-        return jsonify({'error': 'API key et Adresse du mineur requises'}), 400
+    values, error = validate_json_fields(['api_key', 'address'])
+    if error:
+        return error
 
     last_block = blockchain.last_block
     last_hash = blockchain.hash(last_block)
     problem = blockchain.get_problem_for_next_block(last_hash)
-    
-    miner = AlphaProofMiner(problem['statement'], api_key)
-    proof_code = miner.mine(max_iterations=4) # Limité pour éviter le timeout web
-    
-    # Vérifie si le minage a réussi (sans "sorry")
-    is_valid, is_complete = Blockchain.verify_lean_proof(problem['statement'], proof_code)
-    
+
+    miner = AlphaProofMiner(problem['statement'], values['api_key'])
+    proof_code = miner.mine(max_iterations=MCTS_WEB_MAX_ITERATIONS)
+
+    is_valid, is_complete = verify_lean_proof(problem['statement'], proof_code)
+
     if is_complete:
-        # Récompense
-        blockchain.new_transaction(sender="0", recipient=miner_address, amount=1, data="Block Reward")
+        blockchain.new_transaction(
+            sender="0",
+            recipient=values['address'],
+            amount=MINING_REWARD_AMOUNT,
+            data="Block Reward",
+        )
         block = blockchain.new_block(proof_code, last_hash)
         return jsonify({
-            'message': "Bloc forgé avec succès !",
+            'message': "Bloc forge avec succes !",
             'theorem': problem['statement'],
             'proof': block['proof'],
-            'block_index': block['index']
+            'block_index': block['index'],
         }), 200
     else:
         return jsonify({
-            'error': "Le LLM n'a pas réussi à trouver la preuve à temps.",
-            'best_attempt': proof_code
+            'error': "Le LLM n'a pas reussi a trouver la preuve a temps.",
+            'best_attempt': proof_code,
         }), 400
+
 
 @app.route('/transactions/new', methods=['POST'])
 def new_transaction():
-    values = request.get_json()
-    required = ['sender', 'recipient', 'amount']
-    if not all(k in values for k in required):
-        return jsonify({'error': 'Valeurs manquantes'}), 400
+    values, error = validate_json_fields(['sender', 'recipient', 'amount'])
+    if error:
+        return error
 
     index = blockchain.new_transaction(
-        values['sender'], 
-        values['recipient'], 
+        values['sender'],
+        values['recipient'],
         values['amount'],
-        values.get('data', '')
+        values.get('data', ''),
     )
     return jsonify({'message': f'Transaction en attente pour le bloc {index}'}), 201
+
 
 @app.route('/chain', methods=['GET'])
 def full_chain():
     return jsonify({
         'chain': blockchain.chain,
         'length': len(blockchain.chain),
-        'pending_transactions': blockchain.current_transactions
+        'pending_transactions': blockchain.current_transactions,
     }), 200
 
+
 if __name__ == '__main__':
-    # Création du dossier templates s'il n'existe pas
     os.makedirs('templates', exist_ok=True)
-    print("Démarrage du nœud MathChain sur http://localhost:5000")
+    print("Demarrage du noeud MathChain sur http://localhost:5000")
     app.run(host='0.0.0.0', port=5000, debug=True)

@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.pyo
+temp_proof_*.lean
+.env
