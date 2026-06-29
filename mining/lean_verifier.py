@@ -5,6 +5,7 @@ import tempfile
 from dataclasses import dataclass
 
 import config
+from mining.tactics import VALID_TACTICS
 
 
 @dataclass
@@ -91,7 +92,7 @@ def _mock_verify(theorem_statement: str, proof_code: str) -> VerificationResult:
             mock=True,
         )
 
-    valid_tactics = {"rfl", "simp", "omega", "ring", "norm_num", "decide", "trivial"}
+    valid_tactics = VALID_TACTICS
     lines = [
         line.strip()
         for line in proof_code.strip().splitlines()

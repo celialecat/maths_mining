@@ -3,6 +3,7 @@ from uuid import uuid4
 from flask import Blueprint, jsonify, render_template
 
 from api.validators import (
+    error_response,
     get_json_body,
     require_fields,
     validate_address,
@@ -38,16 +39,16 @@ def new_wallet():
 def mine_block():
     body, err = get_json_body()
     if body is None:
-        return jsonify({"error": err}), 400
+        return error_response(err)
 
     ok, err = require_fields(body, ["address"])
     if not ok:
-        return jsonify({"error": err}), 400
+        return error_response(err)
 
     address = body["address"]
     ok, err = validate_address(address)
     if not ok:
-        return jsonify({"error": err}), 400
+        return error_response(err)
 
     last_block = blockchain.last_block
     last_hash = last_block.compute_hash()
@@ -90,23 +91,23 @@ def mine_block():
 def new_transaction():
     body, err = get_json_body()
     if body is None:
-        return jsonify({"error": err}), 400
+        return error_response(err)
 
     ok, err = require_fields(body, ["sender", "recipient", "amount"])
     if not ok:
-        return jsonify({"error": err}), 400
+        return error_response(err)
 
     ok, err = validate_address(body["sender"])
     if not ok:
-        return jsonify({"error": f"Sender: {err}"}), 400
+        return error_response(f"Sender: {err}")
 
     ok, err = validate_address(body["recipient"])
     if not ok:
-        return jsonify({"error": f"Recipient: {err}"}), 400
+        return error_response(f"Recipient: {err}")
 
     ok, err, amount = validate_amount(body["amount"])
     if not ok:
-        return jsonify({"error": err}), 400
+        return error_response(err)
 
     tx = Transaction(
         sender=body["sender"],
@@ -118,7 +119,7 @@ def new_transaction():
     try:
         block_index = blockchain.add_transaction(tx)
     except ValueError as e:
-        return jsonify({"error": str(e)}), 400
+        return error_response(str(e))
 
     return jsonify({
         "message": f"Transaction pending for block {block_index}",

@@ -65,3 +65,14 @@ def pick_random_child(children: list[MCTSNode]) -> MCTSNode | None:
     if not children:
         return None
     return random.choice(children)
+
+
+def traverse_tree(root: MCTSNode) -> list[MCTSNode]:
+    """BFS traversal of the MCTS tree, returning all nodes."""
+    nodes: list[MCTSNode] = []
+    queue = [root]
+    while queue:
+        node = queue.pop()
+        nodes.append(node)
+        queue.extend(node.children)
+    return nodes
