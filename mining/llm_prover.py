@@ -28,6 +28,10 @@ class LLMProver:
     def is_available(self) -> bool:
         return bool(config.OPENAI_API_KEY)
 
+    def set_api_key(self, api_key: str) -> None:
+        config.OPENAI_API_KEY = api_key
+        self._client = None
+
     def suggest_tactics(
         self, theorem_statement: str, current_proof: str, n: int = 3
     ) -> list[str]:
